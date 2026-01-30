@@ -5,7 +5,7 @@ import base64, io, librosa, numpy as np
 app = FastAPI()
 @app.get("/")
 def home():
-    return {"message": "Dial-Defenders API is running 🚀"}
+    return {"message": "Dial-Defenders API is running"}
 class AudioRequest(BaseModel):
     audio_base64: str # Hackathon requirement: Base64 MP3
 
