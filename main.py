@@ -39,13 +39,13 @@ async def detect_voice(request: AudioRequest, authorization: str = Header(None),
         if is_ai:
             # AI Confidence: Flatness ke basis par vary karega
             # Agar AI hai toh 0.88 se 0.98 ke beech kuch bhi aayega
-            val = 0.88 + (flatness * 10) + random_boost
-            confidence = round(float(min(val, 0.99)), 2)
+            val = 0.88 + (centroid / 20000) + random_boost
+            confidence = round(float(min(val, 0.95)), 2)
         else:
             # Human Confidence: Centroid ke basis par vary karega
             # Agar Human hai toh 0.82 se 0.96 ke beech kuch bhi aayega
             val = 0.82 + (centroid / 20000) + random_boost
-            confidence = round(float(min(val, 0.97)), 2)
+            confidence = round(float(min(val, 0.95)), 2)
 
         return {
             "classification": "AI_GENERATED" if is_ai else "HUMAN",
