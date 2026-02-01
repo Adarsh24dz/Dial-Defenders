@@ -56,7 +56,7 @@ async def detect_voice(request: AudioRequest, authorization: str = Header(None),
 
         return {
             "classification": "AI_GENERATED" if is_ai else "HUMAN",
-            "confidence": confidence,
+            "confidence_score": confidence,
             "explanation": explanation
         }
 
@@ -64,7 +64,7 @@ async def detect_voice(request: AudioRequest, authorization: str = Header(None),
         fb_val = round(float(np.random.uniform(0.89, 0.95)), 2)
         return {
             "classification": "HUMAN", 
-            "confidence": fb_val,
+            "confidence_score": fb_val,
             "explanation": f"Acoustic structural analysis at {fb_val} confidence indicates natural prosodic variance."
         }
 
