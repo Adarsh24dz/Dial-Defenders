@@ -15,16 +15,17 @@ class AudioRequest(BaseModel):
 def classify_info():
     return {
         "message": "Use POST /classify with audio_base64 to classify voice",
-        "status": "ready"
+        "status": "ready",
+        "auth": "x-api-key required"
     }
 
 @app.post("/classify")
 async def detect_voice(
     request: AudioRequest,
-    authorization: str = Header(None),
+    x_api_key: str = Header(None, alias="x-api-key"),
     api_key: str = Query(None)
 ):
-    provided_key = authorization or api_key
+    provided_key = x_api_key or api_key
     if not provided_key or "DEFENDER" not in provided_key.upper():
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
