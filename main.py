@@ -12,15 +12,10 @@ class AudioRequest(BaseModel):
 
 # --- 1. GET METHOD (Judges aur Browser ke liye) ---
 @app.get("/classify")
-async def get_classify_info():
+def classify_info():
     return {
-        "status": "Running",
-        "message": "API is active. Use POST method to analyze audio samples.",
-        "requirements": {
-            "header": "x-api-key: DEFENDER",
-            "body": "{ 'audio_base64': 'your_base64_string' }",
-            "method": "POST"
-        }
+        "message": "Use POST /classify with audio_base64 to classify voice",
+        "status": "ready"
     }
 
 # --- 2. POST METHOD (Portal aur Analysis ke liye) ---
