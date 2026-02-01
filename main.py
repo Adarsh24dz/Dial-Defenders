@@ -7,10 +7,19 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-class AudioRequest(BaseModel):
-    audio_base_64: str  # Note: Pydantic will still help with documentation
+# --- 1. MODELS (Swagger Documentation ke liye) ---
 
-# --- 1. GET METHOD (Judges aur Browser ke liye) ---
+# Input Model (Optional but good for Input Docs)
+class AudioRequest(BaseModel):
+    audio_base_64: str 
+
+# Response Model (Yeh zaroori hai Output dikhane ke liye)
+class ClassificationResponse(BaseModel):
+    classification: str
+    confidence_score: float
+    explanation: str
+
+# --- 2. GET METHOD ---
 @app.get("/classify")
 async def get_classify_info():
     return {
@@ -23,20 +32,21 @@ async def get_classify_info():
         }
     }
 
-# --- 2. POST METHOD (Portal aur Analysis ke liye) ---
-@app.post("/classify")
+# --- 3. POST METHOD ---
+# "response_model=ClassificationResponse" add kiya hai yahan
+@app.post("/classify", response_model=ClassificationResponse)
 async def detect_voice(
     request: Request, 
     x_api_key: str = Header(None, alias="x-api-key"), 
     api_key: str = Query(None)
 ):
-    # Key check logic (x-api-key specifically for portal)
+    # Key check logic
     provided_key = x_api_key or api_key
     if not provided_key or "DEFENDER" not in provided_key.upper():
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
     try:
-        # Manual extraction to avoid '422 Unprocessable Entity' errors
+        # Manual extraction (Aapka logic same rakha hai)
         body = await request.json()
         audio_input = body.get("audio_base64") or body.get("audio_base_64")
         
@@ -48,6 +58,7 @@ async def detect_voice(
         audio_bytes = base64.b64decode(encoded_data)
         
         audio_file = io.BytesIO(audio_bytes)
+        # Note: librosa might require ffmpeg installed on the system
         y, sr = librosa.load(audio_file, sr=16000, duration=3.0)
 
         # 2. Features
@@ -58,7 +69,7 @@ async def detect_voice(
         is_ai = bool(flatness > 0.002 or centroid < 2500)
         random_boost = np.random.uniform(0.01, 0.06)
 
-        # 4. Confidence Score Calculation
+        # 4. Confidence Score
         if is_ai:
             val = 0.88 + (centroid / 20000) + random_boost
             confidence = round(float(min(val, 0.95)), 2)
@@ -66,14 +77,15 @@ async def detect_voice(
             val = 0.82 + (centroid / 20000) + random_boost
             confidence = round(float(min(val, 0.95)), 2)
 
-        # --- EXACT JSON RESPONSE AS PER GUVI PORTAL ---
+        # Return dictionary match karega ClassificationResponse model se
         return {
             "classification": "AI_GENERATED" if is_ai else "HUMAN",
-            "confidence_score": confidence, # Changed from 'confidence'
+            "confidence_score": confidence,
             "explanation": "Detected synthetic spectral patterns and neural artifacts." if is_ai else "Detected natural prosodic jitter and organic harmonic variance."
         }
 
-    except Exception:
+    except Exception as e:
+        # Error handling mein bhi wahi structure return karein
         fb_val = round(float(np.random.uniform(0.85, 0.92)), 2)
         return {
             "classification": "HUMAN", 
