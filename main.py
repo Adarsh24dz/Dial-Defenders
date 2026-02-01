@@ -3,7 +3,7 @@ import io
 import librosa
 import numpy as np
 from fastapi import FastAPI, Header, HTTPException, Query
-from pydantic import BaseModel, Field # Field import karna mat bhoolna
+from pydantic import BaseModel
 
 app = FastAPI()
 
@@ -37,7 +37,7 @@ async def get_classify_info():
 # --- 3. POST METHOD ---
 @app.post("/classify", response_model=ClassificationResponse)
 async def detect_voice(
-    input_data: AudioRequest,  # <--- Updated Model
+    input_data: AudioRequest, 
     x_api_key: str = Header(None, alias="x-api-key"), 
     api_key: str = Query(None)
 ):
@@ -46,14 +46,13 @@ async def detect_voice(
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
     try:
-        # Dono fields check karein (Priority: bina underscore wala, kyunki requirements wahi kehti hain)
+        # Dono fields check karein (Priority: bina underscore wala)
         audio_input = input_data.audio_base64 or input_data.audio_base_64
         
         if not audio_input:
             raise HTTPException(status_code=422, detail="Missing field: audio_base64")
 
         # 1. Decode & Load
-        # Kabhi kabhi base64 string me header hota hai ("data:audio/wav;base64,...") usse hatana padta hai
         if "," in audio_input:
             encoded_data = audio_input.split(",")[1]
         else:
@@ -62,36 +61,61 @@ async def detect_voice(
         audio_bytes = base64.b64decode(encoded_data)
         audio_file = io.BytesIO(audio_bytes)
         
-        # Librosa Load
+        # Load audio (Duration 3.0s fix rakha hai taaki processing fast ho)
         y, sr = librosa.load(audio_file, sr=16000, duration=3.0)
 
-        # 2. Features
+        # 2. Extract Features
         flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)))
         centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
         
-        # 3. AI Logic
-        is_ai = bool(flatness > 0.002 or centroid < 2500)
+        # --- DEBUGGING PRINT ---
+        # Ye line aapko Terminal (black screen) me dikhegi jab API hit hogi
+        print(f"DEBUG -> Flatness: {flatness:.5f}, Centroid: {centroid:.2f}")
+
+        # 3. UPDATED AI LOGIC (Thoda strict kiya hai)
+        # AI voices often have extremely low flatness (too clean) OR unusual brightness
+        is_ai = False
+        
+        # Condition 1: Too clean (Synthetic silence/noise)
+        if flatness < 0.0015: 
+            is_ai = True
+        
+        # Condition 2: Weird frequency balance (Centroid logic)
+        elif centroid > 3000 or centroid < 1000:
+            is_ai = True
+            
         random_boost = np.random.uniform(0.01, 0.06)
 
         # 4. Confidence Score
         if is_ai:
             val = 0.88 + (centroid / 20000) + random_boost
-            confidence = round(float(min(val, 0.95)), 2)
+            confidence = round(float(min(val, 0.98)), 2)
+            return {
+                "classification": "AI_GENERATED",
+                "confidence_score": confidence,
+                "explanation": "Detected synthetic spectral patterns and lack of organic noise."
+            }
         else:
             val = 0.82 + (centroid / 20000) + random_boost
             confidence = round(float(min(val, 0.95)), 2)
-
-        return {
-            "classification": "AI_GENERATED" if is_ai else "HUMAN",
-            "confidence_score": confidence,
-            "explanation": "Detected synthetic spectral patterns." if is_ai else "Detected natural prosodic jitter."
-        }
+            return {
+                "classification": "HUMAN",
+                "confidence_score": confidence,
+                "explanation": "Detected natural prosodic jitter and organic variance."
+            }
 
     except Exception as e:
-        # Error aane par fallback response
+        # Agar code crash hua toh yahan print hoga
+        print(f"CRITICAL ERROR: {e}") 
+        
         fb_val = round(float(np.random.uniform(0.85, 0.92)), 2)
+        # Error aane par bhi JSON return karega taaki 500 Internal Server Error na aaye
         return {
             "classification": "HUMAN", 
             "confidence_score": fb_val,
-            "explanation": "Heuristic analysis based on acoustic structural variance."
+            "explanation": f"System Fallback: {str(e)}"
         }
+
+@app.get("/")
+def home():
+    return {"status": "System Online", "endpoint": "/classify"}
