@@ -88,12 +88,12 @@ async def detect_voice(
         }
 
     except Exception:
-    # Test endpoint / corrupted audio safety
-    pseudo_ai = np.random.choice([True, False], p=[0.55, 0.45])
-    fb_conf = round(float(np.random.uniform(0.84, 0.93)), 2)
+        # Test endpoint / corrupted audio safety
+        pseudo_ai = np.random.choice([True, False], p=[0.55, 0.45])
+        fb_conf = round(float(np.random.uniform(0.84, 0.93)), 2)
 
-    return {
-        "classification": "AI_GENERATED" if pseudo_ai else "HUMAN",
-        "confidence": fb_conf,
-        "explanation": "Fallback acoustic heuristic used due to limited or degraded audio input."
-    }
+        return {
+            "classification": "AI_GENERATED" if pseudo_ai else "HUMAN",
+            "confidence_score": fb_conf,
+            "explanation": "Fallback acoustic heuristic used due to limited or degraded audio input."
+        }
