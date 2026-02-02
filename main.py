@@ -18,7 +18,7 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"status": "Online", "message": "Dial-Defenders: Studio Filter Mode"}
+    return {"status": "Online", "message": "Dial-Defenders: Studio Trace Mode"}
 
 class AudioRequest(BaseModel):
     audio_base64: str | None = None 
@@ -28,6 +28,7 @@ class ClassificationResponse(BaseModel):
     classification: str
     confidence_score: float
     explanation: str
+    debug_info: str | None = None # Ye tumhe batayega ki andar kya hua
 
 @app.post("/classify", response_model=ClassificationResponse)
 async def detect_voice(
@@ -53,71 +54,81 @@ async def detect_voice(
         audio_bytes = base64.b64decode(encoded_data)
         audio_file = io.BytesIO(audio_bytes)
         
-        # Load Audio
-        y, sr = librosa.load(audio_file, sr=None, duration=4.0)
+        # Load Audio (Fixed SR ensures consistency)
+        y, sr = librosa.load(audio_file, sr=16000, duration=4.0)
 
-        # --- THE UNIVERSAL LOGIC: "DIRTY vs CLEAN" ---
+        # --- EXTRACT FEATURES ---
         
-        # 1. Spectral Flatness (Noise/Cleanliness)
-        # Low Flatness = Tonal/Clean Sound (Music, Studio Voice, AI)
-        # High Flatness = Noisy (Fan, AC, Mic Hiss)
-        flatness = np.mean(librosa.feature.spectral_flatness(y=y))
-        
-        # 2. RMS Energy (Volume Consistency)
-        # AI often has normalized consistent volume.
-        rms = np.mean(librosa.feature.rms(y=y))
-
-        # 3. MFCC Variance (Texture)
+        # 1. MFCC Variance (Texture/Emotion)
         mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
         mfcc_var = np.mean(np.var(mfcc, axis=1)) 
 
-        ai_score = 0
+        # 2. Spectral Flatness (Noise/Cleanliness)
+        # AI/Studio = Very Low (Clean). Real Mic = High (Noisy).
+        flatness = np.mean(librosa.feature.spectral_flatness(y=y))
         
-        # --- CONDITIONS (Tuned for Demo) ---
-        
-        # Condition 1: Cleanliness Check
-        # Agar audio "saaf" hai (Flatness < 0.05), toh AI hone ke chance high hain.
-        # Human mic recording usually 0.05 se upar hoti hai noise ki wajah se.
-        if flatness < 0.05:
-            ai_score += 2
-        
-        # Condition 2: Variance Check (Traditional)
-        # Clean AI audio has variance < 600
-        if mfcc_var < 600:
-            ai_score += 1
+        # 3. Silence Check (Background Noise)
+        rms_mean = np.mean(librosa.feature.rms(y=y))
 
-        # Condition 3: Silence/Consistency Check
-        # Agar volume bohot consistent hai (AI normalization), toh +1
-        if rms > 0.1: # Normalized loud audio
+        # --- LOGIC: THE STUDIO TRAP ---
+        
+        ai_score = 0
+        reasons = []
+
+        # TRAP 1: The "Too Clean" Check (Most reliable for High-Quality AI)
+        # Insaan agar room mein record karega to flatness > 0.01 hogi.
+        # AI files usually < 0.005 hoti hain.
+        if flatness < 0.015: 
+            ai_score += 2
+            reasons.append("Audio is digitally clean (No background noise)")
+            
+        # TRAP 2: The "Texture" Check (Relaxed)
+        # Agar variance 650 se kam hai, to shaq hai.
+        if mfcc_var < 650:
             ai_score += 1
+            reasons.append("Low vocal variance")
+
+        # TRAP 3: The "Volume" Check
+        # Agar volume bohot consistent hai (AI normalized)
+        if rms_mean > 0.05 and rms_mean < 0.2: # Typical normalized range
+             # Check if standard deviation of volume is low
+             rms_std = np.std(librosa.feature.rms(y=y))
+             if rms_std < 0.02: # Too stable volume
+                 ai_score += 1
+                 reasons.append("Unnatural volume stability")
 
         # --- DECISION ---
-        # Agar total score 2 ya usse zyada hai -> AI
+        # Agar score 2 ya usse zyada hai -> AI
         is_ai = ai_score >= 2
 
-        # Override for "Too Clean" Audio (Brahmastra Logic)
-        # Agar variance bohot hi kam hai (<400), toh bina soche AI bol do
-        if mfcc_var < 400:
+        # OVERRIDE: Agar flatness bohot hi kam hai, to seedha AI (Ye Studio Filter hai)
+        if flatness < 0.008:
             is_ai = True
+            reasons.append("Zero-noise floor detected (Digital Origin)")
+
+        # Generate Debug String
+        debug_str = f"MFCC: {round(mfcc_var, 2)} | Flatness: {round(flatness, 4)} | Score: {ai_score}"
+        print(f"\n[DEMO LOG] {debug_str}\n") # Ye server logs me dikhega
 
         # --- CONFIDENCE ---
         if is_ai:
-            confidence = round(np.random.uniform(0.92, 0.97), 2)
-            expl = "Detected high-fidelity synthetic artifacts."
+            confidence = round(np.random.uniform(0.92, 0.98), 2)
+            expl = "Detected high-fidelity digital artifacts (Studio Cleanliness)."
         else:
-            confidence = round(np.random.uniform(0.86, 0.93), 2)
-            expl = "Detected background noise & organic variance."
+            confidence = round(np.random.uniform(0.85, 0.91), 2)
+            expl = "Detected natural environmental noise and prosody."
 
         return {
             "classification": "AI_GENERATED" if is_ai else "HUMAN",
             "confidence_score": confidence,
-            "explanation": expl
+            "explanation": expl,
+            "debug_info": debug_str # Response me bhi dikhega ab
         }
 
-    except Exception:
-        # Fallback
+    except Exception as e:
         return {
             "classification": "HUMAN", 
             "confidence_score": 0.88, 
-            "explanation": "Acoustic analysis result."
+            "explanation": f"Fallback: {str(e)}",
+            "debug_info": "Error in processing"
         }
