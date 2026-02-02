@@ -123,5 +123,5 @@ async def detect_voice(
             "classification": "HUMAN", 
             "confidence_score": fb_conf, 
             "explanation": "Standard acoustic analysis (Fallback).",
-            "debug_info": "Error processed safely."
+            "debug_info": debug_str
         }
