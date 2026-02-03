@@ -2,32 +2,20 @@ from fastapi import FastAPI, UploadFile, File
 import librosa
 import numpy as np
 import io
-from pydub import AudioSegment
 import uvicorn
 
-# YE LINE ADD KARO - app define karo!
-app = FastAPI(title="AI Voice Detection")
+app = FastAPI()
 
 @app.post("/detect")
 async def detect_voice(file: UploadFile = File(...)):
     contents = await file.read()
-    audio = AudioSegment.from_file(io.BytesIO(contents))
-    audio = audio.set_frame_rate(16000).set_channels(1)
-    wav_io = io.BytesIO()
-    audio.export(wav_io, format="wav")
-    y, sr = librosa.load(wav_io, sr=16000)
+    y, sr = librosa.load(io.BytesIO(contents), sr=16000)
     
     # Silent check
     if np.mean(np.abs(y)) < 0.001:
-        return {
-            "status": "error",
-            "language": "UNKNOWN",
-            "classification": "SILENCE",
-            "confidenceScore": 1.0,
-            "explanation": "No audible voice detected"
-        }
+        return {"status": "error", "language": "UNKNOWN", "classification": "SILENCE", "confidenceScore": 1.0, "explanation": "No audible voice detected"}
     
-    # Features
+    # 5 AI Detection Features (PURE LIBROSA)
     zcr = np.mean(librosa.feature.zero_crossing_rate(y))
     centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
     rolloff = np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr))
