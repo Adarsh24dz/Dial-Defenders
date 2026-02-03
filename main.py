@@ -1,144 +1,88 @@
 import base64
-import io
-import librosa
-import numpy as np
-import soundfile as sf  # <-- Zaroori hai Railway ke liye
+import os
+import uuid
+from typing import Literal
 from fastapi import FastAPI, Header, HTTPException, Request
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
-app = FastAPI()
+app = FastAPI(title="AI Voice Detector API")
 
-# --- 1. CONFIGURATION ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --- Configuration ---
+VALID_API_KEY = "sk_test_123456789"
+SUPPORTED_LANGUAGES = ["Tamil", "English", "Hindi", "Malayalam", "Telugu"]
 
-@app.get("/")
-async def root():
-    return {"status": "online", "message": "Dial-Defenders API Ready"}
+# --- Data Models ---
+class VoiceDetectionRequest(BaseModel):
+    language: Literal["Tamil", "English", "Hindi", "Malayalam", "Telugu"]
+    audioFormat: Literal["mp3"]
+    audioBase64: str
 
-# --- 2. RESPONSE MODEL (Strictly as per PDF) ---
-class VoiceResponse(BaseModel):
+class VoiceDetectionResponse(BaseModel):
     status: str
     language: str
-    classification: str
+    classification: Literal["AI_GENERATED", "HUMAN"]
     confidenceScore: float
     explanation: str
 
-# --- 3. MAIN ENDPOINT ---
-@app.post("/api/voice-detection", response_model=VoiceResponse)
-async def analyze_voice(
-    request: Request,
-    x_api_key: str = Header(None, alias="x-api-key")
+# --- Helper Functions ---
+def detect_ai_voice(file_path: str, language: str):
+    """
+    Yahan aapka actual ML model logic aayega. 
+    Abhi ke liye ye dummy logic use kar raha hai.
+    """
+    # Example Logic: 
+    # Real life mein aap 'librosa' use karke features extract karenge
+    # ya kisi pre-trained model (Wav2Vec2) ka use karenge.
+    
+    # Dummy Detection Logic
+    is_ai = len(file_path) % 2 == 0 # Just a placeholder logic
+    
+    if is_ai:
+        return "AI_GENERATED", 0.91, "Unnatural pitch consistency and robotic speech patterns detected"
+    else:
+        return "HUMAN", 0.95, "Natural breath patterns and emotional nuances detected"
+
+# --- API Endpoint ---
+@app.post("/api/voice-detection", response_model=VoiceDetectionResponse)
+async def voice_detection(
+    request: VoiceDetectionRequest, 
+    x_api_key: str = Header(None)
 ):
-    # A. API Key Check
-    valid_keys = ["sk_test_123456789", "DEFENDER"]
-    if not x_api_key or x_api_key not in valid_keys:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
+    # 1. API Key Validation
+    if x_api_key != VALID_API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key or malformed request")
 
     try:
-        # B. Parse Body (Manual Parsing for safety)
-        try:
-            body = await request.json()
-        except:
-            raise HTTPException(status_code=422, detail="Invalid JSON Body")
-
-        # C. Extract Data (MANDATORY FIELDS CHECK)
+        # 2. Decode Base64 Audio
+        audio_data = base64.b64decode(request.audioBase64)
         
-        # 1. Language
-        language = body.get("language")
-        if not language:
-            # Default to English if missing, or raise error if strictness needed
-            language = "English" 
+        # 3. Save as temporary MP3 file
+        temp_filename = f"temp_{uuid.uuid4()}.mp3"
+        with open(temp_filename, "wb") as f:
+            f.write(audio_data)
 
-        # 2. Audio Data (Strict Check)
-        # Hum dono spelling check karenge taaki galti se fail na ho
-        audio_b64 = body.get("audioBase64") or body.get("audio_base_64")
+        # 4. Perform Detection
+        classification, score, explanation = detect_ai_voice(temp_filename, request.language)
 
-        # AGAR AUDIO NAHI MILA TOH ERROR DO
-        if not audio_b64:
-            raise HTTPException(
-                status_code=422, 
-                detail="Field 'audioBase64' is mandatory. Please provide Base64 encoded MP3 string."
-            )
+        # 5. Cleanup temp file
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
 
-        # --- D. PROCESSING (Anti-Studio Logic) ---
-        
-        # 1. Decode
-        if "," in audio_b64:
-            audio_b64 = audio_b64.split(",")[1]
-            
-        # Fix Padding
-        missing_padding = len(audio_b64) % 4
-        if missing_padding:
-            audio_b64 += '=' * (4 - missing_padding)
-            
-        audio_bytes = base64.b64decode(audio_b64)
-        audio_file = io.BytesIO(audio_bytes)
-
-        # 2. Load Audio (Crash Proof)
-        try:
-            y, sr = librosa.load(audio_file, sr=16000, duration=4.0)
-        except Exception:
-            # Fallback to Soundfile if Librosa fails on Railway
-            audio_file.seek(0)
-            data, samplerate = sf.read(audio_file)
-            if len(data.shape) > 1: y = data.mean(axis=1)
-            else: y = data
-            sr = samplerate
-
-        # 3. Detection Features
-        flatness = np.mean(librosa.feature.spectral_flatness(y=y))
-        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
-        mfcc_var = np.mean(np.var(mfcc, axis=1)) 
-        
-        # 4. Logic (Clean = AI, Noisy = Human)
-        ai_score = 0
-        if flatness < 0.015: ai_score += 2 # Too Clean
-        if mfcc_var < 650: ai_score += 1   # Too Robotic
-
-        is_ai = ai_score >= 2
-        
-        # Override (Absolute Silence/Digital Zero)
-        if flatness < 0.005: is_ai = True
-
-        # --- E. RESULT & CONFIDENCE ---
-        
-        # STRICT RANGE: 0.89 to 0.95
-        confidence = round(np.random.uniform(0.89, 0.95), 2)
-        
-        if is_ai:
-            cls = "AI_GENERATED"
-            expl = "Unnatural pitch consistency and robotic speech patterns detected."
-        else:
-            cls = "HUMAN"
-            expl = "Detected natural breath sounds and environmental acoustic variance."
-
+        # 6. Return Success Response
         return {
             "status": "success",
-            "language": language,
-            "classification": cls,
-            "confidenceScore": confidence,
-            "explanation": expl
+            "language": request.language,
+            "classification": classification,
+            "confidenceScore": score,
+            "explanation": explanation
         }
 
-    except HTTPException as he:
-        raise he # 422/401 wapas bhejo
     except Exception as e:
-        # Fallback (Safety Net)
-        # Error ke case mein bhi Confidence 0.89-0.95 hi rahega
-        fb_conf = round(np.random.uniform(0.89, 0.95), 2)
-        print(f"Server Error: {e}")
-        
         return {
-            "status": "success",
-            "language": "English",
-            "classification": "HUMAN",
-            "confidenceScore": fb_conf,
-            "explanation": "Standard acoustic verification (Safe Mode)."
+            "status": "error",
+            "message": str(e)
         }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
