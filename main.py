@@ -1,3 +1,13 @@
+from fastapi import FastAPI, UploadFile, File
+import librosa
+import numpy as np
+import io
+from pydub import AudioSegment
+import uvicorn
+
+# YE LINE ADD KARO - app define karo!
+app = FastAPI(title="AI Voice Detection")
+
 @app.post("/detect")
 async def detect_voice(file: UploadFile = File(...)):
     contents = await file.read()
@@ -7,14 +17,14 @@ async def detect_voice(file: UploadFile = File(...)):
     audio.export(wav_io, format="wav")
     y, sr = librosa.load(wav_io, sr=16000)
     
-    # Silent check first
-    if np.mean(np.abs(y)) < 0.001:  # Very low energy
+    # Silent check
+    if np.mean(np.abs(y)) < 0.001:
         return {
             "status": "error",
             "language": "UNKNOWN",
             "classification": "SILENCE",
             "confidenceScore": 1.0,
-            "explanation": "No audible voice detected - audio is silent or empty"
+            "explanation": "No audible voice detected"
         }
     
     # Features
@@ -34,11 +44,7 @@ async def detect_voice(file: UploadFile = File(...)):
     classification = "AI_GENERATED" if ai_score > 0.5 else "HUMAN"
     confidence = round(min(ai_score * 2, 1.0), 2) if classification == "AI_GENERATED" else round((1-ai_score) * 2, 2)
     
-    # Proper sentence explanations
-    if classification == "AI_GENERATED":
-        explanation = "Unnatural pitch consistency and robotic speech patterns detected"
-    else:
-        explanation = "Natural prosody and human-like variations observed"
+    explanation = "Unnatural pitch consistency and robotic speech patterns detected" if classification == "AI_GENERATED" else "Natural prosody and human-like variations observed"
     
     return {
         "status": "success",
@@ -47,3 +53,6 @@ async def detect_voice(file: UploadFile = File(...)):
         "confidenceScore": confidence,
         "explanation": explanation
     }
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
